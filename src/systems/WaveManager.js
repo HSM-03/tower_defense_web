@@ -57,9 +57,8 @@ class WaveManager {
   }
 
   _spawnOne(group) {
-    // 웨이브가 진행될수록 체력이 더 가파르게 오르도록 스케일을 올림
-    // (기존 0.055는 후반 웨이브에서도 너무 쉽다는 피드백이 있었음).
-    const hpMult = 1 + (this.waveIndex - 1) * 0.09;
+    // 웨이브별 체력 증가폭 — 너무 쉬웠던 0.055와 너무 가팔랐던 0.09 사이로 조정.
+    const hpMult = 1 + (this.waveIndex - 1) * 0.07;
     const enemy = new Enemy(this.scene, group.type, hpMult);
     this.scene.onEnemySpawned(enemy, this.waveIndex);
     this.spawnedInGroup++;
