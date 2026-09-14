@@ -43,6 +43,7 @@ const PALETTE = {
   enemyTank: 0xff7a3d,
   enemyEvasive: 0x8d6bff,
   enemyBoss: 0xff2d55,
+  enemyFinalBoss: 0xff0a2c, // 중간보스보다 더 어둡고 진한 핏빛 — 최종보스 전용
 
   portalStart: 0xff3b5c,   // 적 스폰 포탈 (붉은 소용돌이)
   portalEnd: 0x9d4dff,     // 기지 포탈 (보라 소용돌이)

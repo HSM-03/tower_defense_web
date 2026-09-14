@@ -296,7 +296,7 @@ const TextureForge = {
   // ============================================================
   _buildEnemies(scene) {
     const defs = [
-      ["normal", 72], ["fast", 72], ["tank", 88], ["evasive", 72], ["boss", 132],
+      ["normal", 72], ["fast", 72], ["tank", 88], ["evasive", 72], ["boss", 132], ["finalboss", 176],
     ];
     for (const [id, size] of defs) {
       const e = ENEMIES[id];
@@ -378,6 +378,55 @@ const TextureForge = {
       ctx.strokeStyle = hexToCss(0xffffff, 0.8);
       ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(0, 0, R * 0.22, 0, Math.PI * 2); ctx.stroke();
+    } else if (id === "finalboss") {
+      // 최종보스 — 중간보스(boss)와는 확실히 다른, "절대 못 이길 것 같은" 위압감을
+      // 주는 전용 실루엣. 뾰족한 스파이크 크라운 + 흰 코어를 가진 이중 반응로 +
+      // 겹겹의 경고 링으로, 육각형 기반의 다른 적/중간보스보다 훨씬 복잡하고 크다.
+      ctx.save();
+      ctx.fillStyle = hullFill;
+      this._pathPts(ctx, this._poly(10, R), 0, 0); ctx.fill();
+      ctx.strokeStyle = hexToCss(PALETTE.hullEdge); ctx.lineWidth = 2.5; ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = hexToCss(darken(PALETTE.hullMid, 22));
+      this._pathPts(ctx, this._poly(10, R * 0.66), 0, 0); ctx.fill();
+      // 길게 돌출된 스파이크 크라운
+      ctx.save();
+      ctx.fillStyle = hexToCss(darken(PALETTE.hullDark, -18));
+      ctx.strokeStyle = hexToCss(accent, 0.7);
+      ctx.lineWidth = 1;
+      this._poly(12, R).forEach(([x, y]) => {
+        const ang = Math.atan2(y, x);
+        const tipX = Math.cos(ang) * R * 1.6, tipY = Math.sin(ang) * R * 1.6;
+        const baseA = ang - 0.1, baseB = ang + 0.1;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(baseA) * R * 0.98, Math.sin(baseA) * R * 0.98);
+        ctx.lineTo(tipX, tipY);
+        ctx.lineTo(Math.cos(baseB) * R * 0.98, Math.sin(baseB) * R * 0.98);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+      });
+      ctx.restore();
+      // 이중 반응로 코어 (어두운 외곽 링 + 밝은 백열 중심)
+      ctx.save();
+      ctx.shadowColor = hexToCss(accent); ctx.shadowBlur = 32;
+      ctx.strokeStyle = hexToCss(accent, 0.95);
+      ctx.lineWidth = 3.5;
+      ctx.beginPath(); ctx.arc(0, 0, R * 0.5, 0, Math.PI * 2); ctx.stroke();
+      this._glowFill(ctx, 0, 0, R * 0.36, accent, 1, 0);
+      ctx.fillStyle = "#ffffff";
+      ctx.shadowBlur = 14;
+      ctx.beginPath(); ctx.arc(0, 0, R * 0.11, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      // 겹겹의 경고 링 (실선 + 점선)
+      ctx.save();
+      ctx.strokeStyle = hexToCss(accent, 0.9);
+      ctx.lineWidth = 4;
+      ctx.shadowColor = hexToCss(accent); ctx.shadowBlur = 22;
+      ctx.beginPath(); ctx.arc(0, 0, R * 1.14, 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = 1.5;
+      ctx.shadowBlur = 0;
+      ctx.setLineDash([7, 6]);
+      ctx.beginPath(); ctx.arc(0, 0, R * 1.3, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
     } else {
       // normal: 드론 (육각 + 눈)
       ctx.save();

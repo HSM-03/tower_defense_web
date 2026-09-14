@@ -283,9 +283,18 @@ class GameScene extends Phaser.Scene {
     this.ui.showBanner(`웨이브 ${waveNum} / ${WAVES.length}`, wave.boss ? PALETTE.danger : PALETTE.pathGlow);
     if (wave.boss) {
       Sfx.bossAlert();
-      this.time.delayedCall(400, () => this.ui.showBanner("⚠ 보스 출현 ⚠", PALETTE.danger, true));
+      this.ui.flashAlert(); // 중간보스·최종보스 동일하게 화면 빨간 사이렌 펄스
+      const isFinal = waveNum === WAVES.length;
+      if (isFinal) Sfx.setMusicMode("boss"); // 최종보스는 브금도 긴박하게 전환
+      this.time.delayedCall(400, () => this.ui.showBanner(isFinal ? "☠ 최종보스 출현 ☠" : "⚠ 중간보스 출현 ⚠", PALETTE.danger, true));
+      // 보스를 놓쳤을 때의 페널티를 미리 안내 — 갑자기 생명이 확 깎이거나
+      // 게임이 끝나면 당황스러우니, 웨이브 시작 시점에 미리 경고해준다.
+      this.time.delayedCall(1800, () => this.ui.showBanner(
+        isFinal ? "최종보스가 기지에 도달하면 즉시 패배합니다!" : "중간보스를 놓치면 생명을 크게 잃습니다!",
+        PALETTE.danger, false, 3000,
+      ));
       const ease = Phaser.Math.Easing.Sine.InOut;
-      this.cameras.main.zoomTo(1.04, 200, ease, true, () => this.cameras.main.zoomTo(1, 260, ease));
+      this.cameras.main.zoomTo(isFinal ? 1.07 : 1.04, 200, ease, true, () => this.cameras.main.zoomTo(1, 260, ease));
     }
   }
 
@@ -299,11 +308,27 @@ class GameScene extends Phaser.Scene {
   }
 
   onEnemyLeaked(enemy) {
-    this.life--;
+    // 일반 유닛이 새는 것과, 그렇게 열심히 키운 보스가 뚫리는 건 무게감이
+    // 달라야 한다 — 지금까진 전부 똑같이 생명 1개만 깎여서 보스를 놓쳐도
+    // 아무렇지 않았다. 중간보스는 크게, 최종보스는 그 즉시 패배로 처리한다
+    // (생명을 정확히 0으로 만들어서 기존 "생명 0 = 패배" 로직을 그대로 탄다).
+    let dmg = 1;
+    if (enemy.type === "boss") dmg = 4;
+    else if (enemy.type === "finalboss") dmg = this.life;
+    this.life = Math.max(0, this.life - dmg);
     Sfx.lifeLost();
-    Fx.ring(this.endGate ? this.path.points[this.path.points.length - 1].x : enemy.container.x,
-      this.path.points[this.path.points.length - 1].y, PALETTE.danger, 60, 300);
-    this.cameras.main.shake(140, 0.004);
+    const gx = this.path.points[this.path.points.length - 1].x;
+    const gy = this.path.points[this.path.points.length - 1].y;
+    const heavy = dmg > 1;
+    Fx.ring(gx, gy, PALETTE.danger, heavy ? 90 : 60, heavy ? 420 : 300);
+    // 보스급 페널티는 순식간에 사라지면 뭐가 깎였는지 읽기도 전에 없어져서,
+    // 훨씬 오래(그리고 천천히 떠오르게) 남겨둔다.
+    Fx.floatText(gx, gy - 40, `-${dmg}`, "#ff3b5c", {
+      size: heavy ? "26px" : "15px",
+      duration: heavy ? 2600 : 700,
+      rise: heavy ? 70 : 34,
+    });
+    this.cameras.main.shake(heavy ? 260 : 140, heavy ? 0.008 : 0.004);
     if (this.life <= 0) this.gameOver(false);
   }
 
@@ -326,6 +351,17 @@ class GameScene extends Phaser.Scene {
         towerCount: this.towers.length,
       });
     });
+  }
+
+  // 일시정지 — GameScene뿐 아니라 UIScene도 같이 멈춰야(pause) 화면이 멈춰있는
+  // 동안 타워 상점/업그레이드 패널 등을 실수로 계속 조작할 수 없다. 실제
+  // 선택지(이어하기/타이틀로 나가기)는 항상 살아있는 별도 씬(PauseScene)에서 처리한다
+  // — 게임오버 화면과 동일한 패턴.
+  pauseGame() {
+    if (this.over) return;
+    this.scene.pause();
+    this.scene.pause("UIScene");
+    this.scene.launch("PauseScene");
   }
 
   toggleSpeed() {

@@ -12,7 +12,14 @@ class AudioSynth {
     this.lastPlay = {}; // 동시 다발 사운드 스팸 방지용 쓰로틀
   }
 
-  // 최초 사용자 입력 시 호출 (브라우저 오토플레이 정책 대응)
+  // 최초 사용자 입력 시 호출 (브라우저 오토플레이 정책 대응).
+  // AudioContext 생성 자체는(자동재생 정책 통과를 위해) 클릭 이벤트 안에서
+  // 바로 해야 하지만, 리버브 임펄스 생성 + 배경음악 시작은 굳이 그 안에서
+  // 동기로 끝낼 필요가 없다. 이걸 전부 한 번에 처리하면 첫 클릭 때(타이틀
+  // 화면 클릭 → 게임 화면 전환 시점) 60~90ms 정도 메인 스레드가 멎어서
+  // "시작할 때 버벅인다"는 느낌을 줬다 — 화면 전환을 가로막지 않도록
+  // 한 틱 뒤로 미룸(_tone/_noise는 reverbSend가 아직 없어도 죽지 않게
+  // null 체크를 해뒀으니 그 사이에 UI 클릭음 등이 나도 안전함).
   unlock() {
     if (this.ctx) {
       if (this.ctx.state === "suspended") this.ctx.resume();
@@ -25,16 +32,18 @@ class AudioSynth {
     this.master.gain.value = 0.55;
     this.master.connect(this.ctx.destination);
 
-    // 짧은 임펄스 리버브 (합성 공간감)
-    const convolver = this.ctx.createConvolver();
-    convolver.buffer = this._makeImpulse(1.1, 2.2);
-    const reverbGain = this.ctx.createGain();
-    reverbGain.gain.value = 0.16;
-    convolver.connect(reverbGain);
-    reverbGain.connect(this.master);
-    this.reverbSend = convolver;
+    setTimeout(() => {
+      // 짧은 임펄스 리버브 (합성 공간감)
+      const convolver = this.ctx.createConvolver();
+      convolver.buffer = this._makeImpulse(0.6, 2.2);
+      const reverbGain = this.ctx.createGain();
+      reverbGain.gain.value = 0.16;
+      convolver.connect(reverbGain);
+      reverbGain.connect(this.master);
+      this.reverbSend = convolver;
 
-    this.startMusic("title");
+      this.startMusic("title");
+    }, 0);
   }
 
   setEnabled(v) { this.enabled = v; }
@@ -59,7 +68,7 @@ class AudioSynth {
     // 타이틀 화면 음악이 게임 화면보다 훨씬 조용하게 들린다는 피드백이 있어
     // 둘의 목표 볼륨을 동일한 수준으로 맞춘다 (타이틀은 악기 수가 적어서
     // 그것만으로는 부족하므로, 아래 _playArpeggio/_playBass의 개별 게인도 올림).
-    const target = mode === "game" ? 0.78 : 0.78;
+    const target = mode === "boss" ? 0.85 : 0.78;
     const t0 = this.ctx.currentTime;
     this.musicGain.gain.cancelScheduledValues(t0);
     this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, t0);
@@ -106,6 +115,7 @@ class AudioSynth {
   _musicStep() {
     if (!this._musicPlaying || !this.ctx) return;
     if (this._musicMode === "game") this._musicStepGame();
+    else if (this._musicMode === "boss") this._musicStepBoss();
     else this._musicStepTitle();
   }
 
@@ -133,6 +143,28 @@ class AudioSynth {
       [103.83, 130.81, 155.56, 207.65],  // Ab
       [155.56, 196.0, 233.08, 311.13],   // Eb
       [116.54, 146.83, 174.61, 233.08],  // Bb
+    ];
+    const chord = chords[this._chordIdx % chords.length];
+    this._playPad(chord, barDur * 1.9);
+    this._playKick(barDur);
+    this._playDiscoBass(chord, barDur);
+    this._playHihat(barDur);
+    this._playLead(chord, barDur);
+    this._chordIdx++;
+    this._musicTimer = setTimeout(() => this._musicStep(), barDur * 1000);
+  }
+
+  // 최종보스 전용 — 게임 브금(2.0s/마디)보다 훨씬 빠르고(1.15s/마디), 반음씩
+  // 내려가는 어둡고 불안정한 화음으로 "위기감"을 준다. 악기 구성 자체는
+  // 게임 브금과 동일하게 재사용해서(킥/베이스/하이햇/리드) 새 악기를 만들
+  // 필요 없이 템포와 화성만으로 긴박함을 만든다.
+  _musicStepBoss() {
+    const barDur = 1.15;
+    const chords = [
+      [116.54, 138.59, 164.81, 207.65], // Bbm 계열
+      [110.00, 130.81, 155.56, 196.00], // Am 계열
+      [103.83, 123.47, 146.83, 185.00], // Abm 계열
+      [98.00, 116.54, 138.59, 174.61],  // Gm 계열 — 한 바퀴 돌 때마다 반음씩 하강
     ];
     const chord = chords[this._chordIdx % chords.length];
     this._playPad(chord, barDur * 1.9);
@@ -299,14 +331,21 @@ class AudioSynth {
     });
   }
 
+  // 처음 화면을 클릭하는 순간(unlock) 이 함수가 동기적으로 실행되는데,
+  // 예전엔 채널마다 Math.pow를 다시 계산해서(총 2*len번) 첫 클릭 때 90ms
+  // 가까이 멎는 버벅임의 원인이었다. 감쇠 곡선(envelope)은 채널과 무관하게
+  // 값이 같으므로 한 번만 계산해서 재사용 — 그리고 길이도 살짝 줄여서
+  // (1.1s → 0.6s) 짧은 잔향으로도 충분한 수준까지만 남김.
   _makeImpulse(seconds, decay) {
     const rate = this.ctx.sampleRate;
     const len = Math.floor(rate * seconds);
     const buf = this.ctx.createBuffer(2, len, rate);
+    const env = new Float32Array(len);
+    for (let i = 0; i < len; i++) env[i] = Math.pow(1 - i / len, decay);
     for (let ch = 0; ch < 2; ch++) {
       const data = buf.getChannelData(ch);
       for (let i = 0; i < len; i++) {
-        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+        data[i] = (Math.random() * 2 - 1) * env[i];
       }
     }
     return buf;
@@ -350,7 +389,7 @@ class AudioSynth {
     }
     node.connect(g);
     g.connect(this.master);
-    if (wet > 0) g.connect(this.reverbSend);
+    if (wet > 0 && this.reverbSend) g.connect(this.reverbSend);
 
     osc.start(t0);
     osc.stop(t0 + dur + 0.05);
@@ -375,7 +414,7 @@ class AudioSynth {
     this._env(g, t0, { peak: gain, decay: dur * 0.4, release: dur * 0.5, ...envOpts });
 
     src.connect(f); f.connect(g); g.connect(this.master);
-    if (wet > 0) g.connect(this.reverbSend);
+    if (wet > 0 && this.reverbSend) g.connect(this.reverbSend);
     src.start(t0);
     src.stop(t0 + dur + 0.02);
   }
@@ -467,8 +506,38 @@ class AudioSynth {
     });
   }
 
+  // 보스 등장 경고 사이렌 — 두 음 사이를 오르내리며 몇 초간 우는 진짜
+  // "사이렌" 소리. 기존엔 단발 톤 하나뿐이라 경고감이 약했음.
   bossAlert() {
-    this._tone({ freq: 110, type: "sawtooth", dur: 0.6, gain: 0.28, filterFreq: 500 });
+    if (!this.enabled || !this.ctx) return;
+    const t0 = this.ctx.currentTime;
+    const dur = 2.4;
+    const cycles = 4; // 저음<->고음 왕복 횟수
+    const low = 220, high = 520;
+
+    const osc = this.ctx.createOscillator();
+    osc.type = "sawtooth";
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 2400;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(0.26, t0 + 0.1);
+    g.gain.setValueAtTime(0.26, t0 + dur - 0.2);
+    g.gain.linearRampToValueAtTime(0, t0 + dur);
+
+    const cycleDur = dur / cycles;
+    osc.frequency.setValueAtTime(low, t0);
+    for (let i = 1; i <= cycles * 2; i++) {
+      const f = i % 2 === 1 ? high : low;
+      osc.frequency.linearRampToValueAtTime(f, t0 + i * (cycleDur / 2));
+    }
+
+    osc.connect(filter); filter.connect(g); g.connect(this.master);
+    if (this.reverbSend) g.connect(this.reverbSend);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.05);
+
     this._noise({ dur: 0.4, gain: 0.15, filterFreq: 1500, filterType: "bandpass" });
   }
 }

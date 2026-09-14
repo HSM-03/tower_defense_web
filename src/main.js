@@ -9,7 +9,7 @@ const config = {
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
   render: { antialias: true, pixelArt: false, roundPixels: false },
-  scene: [BootScene, TitleScene, GameScene, UIScene, GameOverScene],
+  scene: [BootScene, TitleScene, GameScene, UIScene, PauseScene, GameOverScene],
 };
 
 window.addEventListener("load", () => {

@@ -91,6 +91,22 @@ class UIScene extends Phaser.Scene {
       onOut: () => speedBg.setFillStyle(PALETTE.panelLight),
       tooltip: () => "1배속 / 2배속 전환",
     });
+
+    // 일시정지 — 배속 버튼 바로 왼쪽에 배치
+    const pauseX = speedX - speedW / 2 - 10 - 22, pauseY = 32, pauseW = 44, pauseH = 44;
+    const pauseC = this.add.container(pauseX, pauseY).setDepth(91);
+    const pauseBg = this.add.rectangle(0, 0, 40, 38, PALETTE.panelLight, 1).setStrokeStyle(1, PALETTE.hullEdge, 0.6);
+    const pauseLabel = this.add.text(0, 0, "⏸", { fontFamily: "Segoe UI, sans-serif", fontSize: "18px", color: hexToCss(PALETTE.textPrimary) }).setOrigin(0.5);
+    pauseC.add([pauseBg, pauseLabel]);
+
+    this.addHotspot({
+      getRect: () => ({ x: pauseX - pauseW / 2, y: pauseY - pauseH / 2, w: pauseW, h: pauseH }),
+      active: () => !this.game_.over,
+      onDown: () => { Sfx.uiClick(); this.game_.pauseGame(); },
+      onOver: () => pauseBg.setFillStyle(lighten(PALETTE.panelLight, 12)),
+      onOut: () => pauseBg.setFillStyle(PALETTE.panelLight),
+      tooltip: () => "일시정지",
+    });
   }
 
   _numStyle() {
@@ -237,8 +253,8 @@ class UIScene extends Phaser.Scene {
     if (t.def.behavior === "pierce") lines.push(`관통 ${s.pierceCount}명`);
     if (t.def.behavior === "splash") lines.push(`폭발 반경 ${Math.round(s.splashRadius)}`);
     if (t.def.behavior === "slow") lines.push(`감속 ${Math.round(s.slowPct)}%`);
-    if (t.def.behavior === "poison") lines.push(`독 ${s.poisonDps.toFixed(1)}/s x${s.poisonMaxStacks}`);
-    if (t.def.behavior === "stun") lines.push(`스턴 ${s.stunDuration.toFixed(1)}s`);
+    if (t.def.behavior === "poison") lines.push(`독 ${s.poisonDps.toFixed(1)}/초 (최대 ${s.poisonMaxStacks}중첩)`);
+    if (t.def.behavior === "stun") lines.push(`마비 ${s.stunDuration.toFixed(1)}초`);
     this.panelStats.setText(lines.join("\n"));
 
     const cost = t.upgradeCost();
@@ -283,16 +299,38 @@ class UIScene extends Phaser.Scene {
 
   _hideTooltip() { this.tooltip.setVisible(false); }
 
+  // ---------------- 보스 경고 화면 효과 ----------------
+  // 화면 전체에 빨간 오버레이를 깔고 사이렌 소리에 맞춰 몇 번 깜빡인다.
+  // GameScene이 아니라 UIScene에 만드는 이유: GameScene 카메라는 보스 등장
+  // 시 줌 이펙트를 쓰는데, UIScene은 별도 카메라라 그 영향을 안 받아서
+  // 화면을 항상 정확히 꽉 채운다. 배너 글자(depth 98)보다 한 단계 낮게 둬서
+  // 경고 문구가 빨간빛에 묻히지 않게 함.
+  flashAlert(duration = 2400, pulses = 4) {
+    const w = this.scale.width, h = this.scale.height;
+    // 생성자의 마지막 인자(fillAlpha)는 1로 고정해두고, 대신 오브젝트 자체의
+    // alpha를 0에서 튜닝한다 — fillAlpha를 0으로 만들어두고 object.alpha만
+    // 건드리면(처음 버전의 버그) fillAlpha가 계속 0이라 화면에 아예 안 보임.
+    const r = this.add.rectangle(0, 0, w, h, 0xff0000, 1).setOrigin(0, 0).setDepth(97).setAlpha(0);
+    const per = duration / pulses / 2;
+    this.tweens.add({
+      targets: r, alpha: 0.16, duration: per, yoyo: true, repeat: pulses - 1, ease: "Sine.InOut",
+      onComplete: () => r.destroy(),
+    });
+  }
+
   // ---------------- 배너 ----------------
-  showBanner(text, color, big = false) {
+  // hold: 화면에 그대로 머무는 시간(ms). 안 주면 기존처럼 big 여부로 결정됨 —
+  // 보스 관련 경고문처럼 문장이 길어서 읽을 시간이 더 필요한 경우에 사용.
+  showBanner(text, color, big = false, hold) {
     const t = this.add.text(640, big ? 120 : 96, text, {
       fontFamily: "Segoe UI, sans-serif", fontSize: big ? "34px" : "24px", color: hexToCss(color),
       fontStyle: "bold", stroke: "#04070c", strokeThickness: 5,
     }).setOrigin(0.5).setDepth(98).setAlpha(0);
+    const holdMs = hold !== undefined ? hold : (big ? 1400 : 1000);
     this.tweens.add({
       targets: t, alpha: 1, y: (big ? 120 : 96) + 10, duration: 260, ease: "Cubic.Out",
       onComplete: () => {
-        this.tweens.add({ targets: t, alpha: 0, delay: big ? 1400 : 1000, duration: 400, onComplete: () => t.destroy() });
+        this.tweens.add({ targets: t, alpha: 0, delay: holdMs, duration: 400, onComplete: () => t.destroy() });
       },
     });
   }

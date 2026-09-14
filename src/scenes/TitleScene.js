@@ -17,11 +17,11 @@ class TitleScene extends Phaser.Scene {
     gradBottom.fillRect(0, h - 260, w, 260);
 
     // ---- 적 유닛 대형 (하단, 뒤판+링으로 뚜렷하게 보이도록) ----
-    const decoIds = ["tank", "fast", "evasive", "normal", "boss"];
+    const decoIds = ["tank", "fast", "evasive", "normal", "boss", "finalboss"];
     decoIds.forEach((id, i) => {
-      const x = 210 + i * 220;
+      const x = 165 + i * 190;
       const y = 664 + (i % 2 === 0 ? -8 : 8);
-      const scale = id === "boss" ? 0.62 : 0.95;
+      const scale = id === "finalboss" ? 0.5 : id === "boss" ? 0.62 : 0.95;
       const accent = PALETTE[ENEMIES[id].color];
 
       const plate = this.add.circle(x, y, 34 * scale, 0x000000, 0.45).setDepth(1.95);
@@ -157,14 +157,14 @@ class TitleScene extends Phaser.Scene {
       modal.add([base, turret, name, desc]);
     });
 
-    // 오른쪽: 적 5종
+    // 오른쪽: 적 6종 (타워 칸과 같은 간격을 써야 6줄이 패널 안에 다 들어감)
     const colEnemyX = px + panelW / 2 + 40;
     modal.add(this.add.text(colEnemyX, py + 84, "▸ 적 유닛", { fontFamily: "Segoe UI, sans-serif", fontSize: "15px", fontStyle: "bold", color: hexToCss(PALETTE.goldTrim) }));
     ENEMY_ORDER.forEach((id, i) => {
       const def = ENEMIES[id];
       const accent = PALETTE[def.color];
-      const rowY = py + 116 + i * 92;
-      const icon = this.add.image(colEnemyX + 22, rowY + 20, `en_${id}`).setScale(def.isBoss ? 0.32 : 0.55);
+      const rowY = py + 116 + i * 78;
+      const icon = this.add.image(colEnemyX + 22, rowY + 20, `en_${id}`).setScale(def.isBoss ? 0.28 : 0.55);
       const name = this.add.text(colEnemyX + 54, rowY, def.name, {
         fontFamily: "Segoe UI, sans-serif", fontSize: "14px", fontStyle: "bold", color: hexToCss(accent),
       });
