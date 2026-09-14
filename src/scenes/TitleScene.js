@@ -81,6 +81,13 @@ class TitleScene extends Phaser.Scene {
     btn.add([glow, bg, label]);
     this.tweens.add({ targets: glow, scale: { from: 0.9, to: 1.14 }, alpha: { from: 0.4, to: 0 }, duration: 1000, repeat: -1, ease: "Sine.Out" });
 
+    // 사운드에 신경 쓴 만큼 소리를 켜고 플레이하도록 살짝 안내 (textDim은 너무 어두워
+    // 배경 위에서 거의 안 보여서, 눈에 띄는 goldTrim 액센트 색 + 그림자로 대비를 확실히 줌)
+    const soundHint = this.add.text(w / 2, 604, "🔊 더 나은 플레이를 위해 소리를 켜주세요", {
+      fontFamily: "Segoe UI, sans-serif", fontSize: "15px", fontStyle: "bold", color: hexToCss(PALETTE.goldTrim),
+    }).setOrigin(0.5).setDepth(3).setShadow(0, 2, "#000000", 5, true, true);
+    this.tweens.add({ targets: soundHint, alpha: { from: 0.75, to: 1 }, scale: { from: 0.98, to: 1.03 }, duration: 1200, yoyo: true, repeat: -1, ease: "Sine.InOut" });
+
     const btnRect = { x: w / 2 - 120, y: 562 - 34, w: 240, h: 68 };
 
     // ---- 정보(도감) 버튼 — 시작하기 버튼 바로 위, 눈에 잘 띄게 배치 ----

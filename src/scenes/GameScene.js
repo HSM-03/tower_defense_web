@@ -281,11 +281,15 @@ class GameScene extends Phaser.Scene {
   onWaveStart(waveNum, wave) {
     Sfx.waveStart();
     this.ui.showBanner(`웨이브 ${waveNum} / ${WAVES.length}`, wave.boss ? PALETTE.danger : PALETTE.pathGlow);
+    // 보스 웨이브가 아니면(또는 중간보스를 넘긴 뒤) 평상시 브금으로 복귀 —
+    // 중간보스 브금 모드에 계속 머물러 있지 않도록 매 일반 웨이브마다 확인한다.
+    if (!wave.boss) Sfx.setMusicMode("game");
     if (wave.boss) {
       Sfx.bossAlert();
       this.ui.flashAlert(); // 중간보스·최종보스 동일하게 화면 빨간 사이렌 펄스
       const isFinal = waveNum === WAVES.length;
-      if (isFinal) Sfx.setMusicMode("boss"); // 최종보스는 브금도 긴박하게 전환
+      // 평상시 → 중간보스 → 최종보스로 브금이 3단 계단식으로 상승한다.
+      Sfx.setMusicMode(isFinal ? "boss" : "midboss");
       this.time.delayedCall(400, () => this.ui.showBanner(isFinal ? "☠ 최종보스 출현 ☠" : "⚠ 중간보스 출현 ⚠", PALETTE.danger, true));
       // 보스를 놓쳤을 때의 페널티를 미리 안내 — 갑자기 생명이 확 깎이거나
       // 게임이 끝나면 당황스러우니, 웨이브 시작 시점에 미리 경고해준다.

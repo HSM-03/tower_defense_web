@@ -57,6 +57,9 @@ class AudioSynth {
     this._musicMode = mode;
     this._musicPlaying = true;
     if (this._musicTimer) clearTimeout(this._musicTimer);
+    // 최종보스 트랙의 라이저 임팩트가 예약된 채로 트랙이 바뀌면(예: 게임 종료 →
+    // 타이틀 복귀) 엉뚱한 모드의 버스에 늦게 터지는 걸 방지
+    if (this._musicImpactTimer) clearTimeout(this._musicImpactTimer);
 
     if (!this.musicGain) {
       this.musicGain = this.ctx.createGain();
@@ -68,7 +71,7 @@ class AudioSynth {
     // 타이틀 화면 음악이 게임 화면보다 훨씬 조용하게 들린다는 피드백이 있어
     // 둘의 목표 볼륨을 동일한 수준으로 맞춘다 (타이틀은 악기 수가 적어서
     // 그것만으로는 부족하므로, 아래 _playArpeggio/_playBass의 개별 게인도 올림).
-    const target = mode === "boss" ? 0.85 : 0.78;
+    const target = mode === "boss" ? 0.85 : mode === "midboss" ? 0.82 : 0.78;
     const t0 = this.ctx.currentTime;
     this.musicGain.gain.cancelScheduledValues(t0);
     this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, t0);
@@ -90,6 +93,15 @@ class AudioSynth {
     modeGain.gain.linearRampToValueAtTime(1, t0 + 0.3);
     this._modeGainNode = modeGain;
 
+    // 그루브 버스 — 킥/베이스/하이햇/패드/리드는 modeGainNode로 바로 가지 않고
+    // 이 버스를 거친다. 평소엔 게인 1로 아무 영향이 없지만, 최종보스 트랙에서
+    // 라이저가 차오르는 동안 이 버스만 살짝 눌러서(_duckGroove) 라이저(보스의
+    // 울음소리)가 그루브를 뚫고 확실히 들리게 만든다.
+    const grooveGain = this.ctx.createGain();
+    grooveGain.gain.value = 1;
+    grooveGain.connect(modeGain);
+    this._grooveGain = grooveGain;
+
     this._chordIdx = 0;
     this._musicStep();
   }
@@ -104,6 +116,7 @@ class AudioSynth {
     if (!this._musicPlaying) return;
     this._musicPlaying = false;
     if (this._musicTimer) clearTimeout(this._musicTimer);
+    if (this._musicImpactTimer) clearTimeout(this._musicImpactTimer);
     if (this.musicGain && this.ctx) {
       const g = this.musicGain;
       g.gain.cancelScheduledValues(this.ctx.currentTime);
@@ -115,7 +128,8 @@ class AudioSynth {
   _musicStep() {
     if (!this._musicPlaying || !this.ctx) return;
     if (this._musicMode === "game") this._musicStepGame();
-    else if (this._musicMode === "boss") this._musicStepBoss();
+    else if (this._musicMode === "midboss") this._musicStepMidBoss();
+    else if (this._musicMode === "boss") this._musicStepFinalBoss();
     else this._musicStepTitle();
   }
 
@@ -154,11 +168,14 @@ class AudioSynth {
     this._musicTimer = setTimeout(() => this._musicStep(), barDur * 1000);
   }
 
-  // 최종보스 전용 — 게임 브금(2.0s/마디)보다 훨씬 빠르고(1.15s/마디), 반음씩
-  // 내려가는 어둡고 불안정한 화음으로 "위기감"을 준다. 악기 구성 자체는
-  // 게임 브금과 동일하게 재사용해서(킥/베이스/하이햇/리드) 새 악기를 만들
-  // 필요 없이 템포와 화성만으로 긴박함을 만든다.
-  _musicStepBoss() {
+  // 중간보스(6웨이브) 전용 — 원래 최종보스용으로 썼던 트랙을 그대로 재사용.
+  // 게임 브금(2.0s/마디)보다 훨씬 빠르고(1.15s/마디), 반음씩 내려가는 어둡고
+  // 불안정한 화음으로 "위기감"을 준다. 악기 구성 자체는 게임 브금과 동일하게
+  // 재사용해서(킥/베이스/하이햇/리드) 새 악기를 만들 필요 없이 템포와 화성만으로
+  // 긴박함을 만든다. 최종보스는 이보다 한 단계 더 무거운 전용 트랙을 쓴다
+  // (아래 _musicStepFinalBoss 참고) — 평상시 → 중간보스 → 최종보스로 사운드가
+  // 3단 계단식으로 상승하게 함.
+  _musicStepMidBoss() {
     const barDur = 1.15;
     const chords = [
       [116.54, 138.59, 164.81, 207.65], // Bbm 계열
@@ -176,6 +193,50 @@ class AudioSynth {
     this._musicTimer = setTimeout(() => this._musicStep(), barDur * 1000);
   }
 
+  // 최종보스(12웨이브) 전용 — 중간보스 트랙의 긴박함은 유지하되, 거기에 "압도감/공포"를
+  // 더한다. 그로울 베이스(링 모듈레이션으로 만든 괴물 울음 같은 저음) + 불규칙한 타이밍의
+  // 트라이톤 스팅어(예측 불가능한 불안감) 위에, 8마디 주기로 차오르는 라이저가 얹힌다.
+  // 이 라이저가 차오르는 동안엔 그루브(패드/킥/하이햇)를 자동으로 살짝 눌러(더킹) 라이저가
+  // 배경음을 뚫고 "진짜 보스의 울음소리"처럼 들리게 하고, 정점에서 무거운 타격음으로 터진다.
+  _musicStepFinalBoss() {
+    const barDur = 1.0;
+    const chords = [
+      [116.54, 138.59, 164.81, 207.65],
+      [110.00, 130.81, 155.56, 196.00],
+      [103.83, 123.47, 146.83, 185.00],
+      [98.00, 116.54, 138.59, 174.61],
+    ];
+    const riserCycle = 8;
+    const chord = chords[this._chordIdx % chords.length];
+    const barIdx = this._chordIdx % riserCycle;
+
+    this._playPad(chord, barDur * 1.8, 0.7);
+    this._playKick(barDur);
+    this._playHihat(barDur);
+
+    // 링모듈 그로울 — 8마디짜리 라이저 주기와 함께 새로 겹쳐 깐다(끊기지 않게 약간 겹침)
+    if (barIdx === 0) this._playRingModGrowl(barDur * riserCycle + 0.3, 55);
+
+    // 불규칙한 타이밍에 트라이톤 스팅어 — 매번 같은 자리가 아니라서 더 불안하게 만듦
+    const stabOffsets = [0.15, 0.62, 0.38, 0.8];
+    if (this._chordIdx % 2 === 1) {
+      const t0 = this.ctx.currentTime + barDur * stabOffsets[this._chordIdx % stabOffsets.length];
+      setTimeout(() => this._playTritoneStab(this.ctx.currentTime, chord[2], 0.22), Math.max(0, (t0 - this.ctx.currentTime) * 1000));
+    }
+
+    // 8마디 주기로 차오르는 라이저 + 그루브 더킹, 정점에서 임팩트
+    if (barIdx === 0) {
+      const buildDur = barDur * riserCycle * 0.94;
+      this._playDarkRiser(this.ctx.currentTime, buildDur);
+      this._duckGroove(this.ctx.currentTime, buildDur);
+      const nextChord = chords[(this._chordIdx + riserCycle) % chords.length];
+      this._musicImpactTimer = setTimeout(() => this._playHeavyImpact(this.ctx.currentTime, nextChord[2]), buildDur * 1000);
+    }
+
+    this._chordIdx++;
+    this._musicTimer = setTimeout(() => this._musicStep(), barDur * 1000);
+  }
+
   // 4온더플로어 킥
   _playKick(barDur) {
     const beatDur = barDur / 4;
@@ -189,7 +250,7 @@ class AudioSynth {
       g.gain.setValueAtTime(0, t0);
       g.gain.linearRampToValueAtTime(0.42, t0 + 0.008);
       g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.22);
-      osc.connect(g); g.connect(this._modeGainNode);
+      osc.connect(g); g.connect(this._grooveGain);
       osc.start(t0); osc.stop(t0 + 0.24);
     }
   }
@@ -212,7 +273,7 @@ class AudioSynth {
       g.gain.setValueAtTime(0, t0);
       g.gain.linearRampToValueAtTime(peak, t0 + 0.01);
       g.gain.exponentialRampToValueAtTime(0.002, t0 + stepDur * 0.8);
-      osc.connect(filter); filter.connect(g); g.connect(this._modeGainNode);
+      osc.connect(filter); filter.connect(g); g.connect(this._grooveGain);
       osc.start(t0); osc.stop(t0 + stepDur);
     }
   }
@@ -233,7 +294,7 @@ class AudioSynth {
       const g = this.ctx.createGain();
       g.gain.setValueAtTime(0.13, t0);
       g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.045);
-      src.connect(filter); filter.connect(g); g.connect(this._modeGainNode);
+      src.connect(filter); filter.connect(g); g.connect(this._grooveGain);
       src.start(t0); src.stop(t0 + 0.05);
     }
   }
@@ -259,7 +320,7 @@ class AudioSynth {
     });
   }
 
-  _playPad(freqs, dur) {
+  _playPad(freqs, dur, peakMult) {
     const t0 = this.ctx.currentTime;
     freqs.forEach((f, i) => {
       const osc = this.ctx.createOscillator();
@@ -274,14 +335,15 @@ class AudioSynth {
       filter.frequency.value = 1100 - i * 120;
 
       const g = this.ctx.createGain();
-      const peak = (0.17 - i * 0.015);
+      const peak = (0.17 - i * 0.015) * (peakMult || 1);
       g.gain.setValueAtTime(0, t0);
       g.gain.linearRampToValueAtTime(peak, t0 + dur * 0.35);
       g.gain.linearRampToValueAtTime(peak * 0.7, t0 + dur * 0.7);
       g.gain.linearRampToValueAtTime(0, t0 + dur * 1.02);
 
       osc.connect(filter); detune.connect(filter);
-      filter.connect(g); g.connect(this._modeGainNode); g.connect(this.reverbSend);
+      filter.connect(g); g.connect(this._grooveGain);
+      if (this.reverbSend) g.connect(this.reverbSend);
       osc.start(t0); detune.start(t0);
       osc.stop(t0 + dur * 1.05); detune.stop(t0 + dur * 1.05);
     });
@@ -329,6 +391,126 @@ class AudioSynth {
       osc.connect(filter); filter.connect(g); g.connect(this._modeGainNode); g.connect(this.reverbSend);
       osc.start(t0); osc.stop(t0 + stepDur);
     });
+  }
+
+  // ============ 최종보스 전용 악기 (공포/압도감) ============
+
+  // 디스토션 커브 생성 (그로울/라이저의 뒤틀린 질감용)
+  _makeDistortionCurve(amount) {
+    const n = 44100, curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = (i * 2) / n - 1;
+      curve[i] = ((3 + amount) * x * 20 * Math.PI / 180) / (Math.PI + amount * Math.abs(x));
+    }
+    return curve;
+  }
+
+  // 링 모듈레이션 괴물 그로울 — 두 주파수가 맥놀이(beating)를 일으켜 "울음소리" 같은
+  // 질감을 낸다. modeGainNode로 직행(그루브 버스를 거치지 않음 = 더킹 영향을 안 받는
+  // "보스의 몸" 같은 상시 존재감).
+  _playRingModGrowl(dur, baseFreq) {
+    const t0 = this.ctx.currentTime;
+    const carrier = this.ctx.createOscillator(); carrier.type = "sawtooth"; carrier.frequency.value = baseFreq || 55;
+    const modulator = this.ctx.createOscillator(); modulator.type = "sine"; modulator.frequency.value = (baseFreq || 55) * 1.5;
+    const ringGain = this.ctx.createGain(); ringGain.gain.value = 0;
+    modulator.connect(ringGain.gain);
+    const carrierGain = this.ctx.createGain(); carrierGain.gain.value = 1;
+    const outGain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter(); filter.type = "lowpass"; filter.frequency.value = 500;
+    carrier.connect(carrierGain); carrierGain.connect(ringGain);
+    ringGain.connect(filter); filter.connect(outGain); outGain.connect(this._modeGainNode);
+    outGain.gain.setValueAtTime(0, t0);
+    outGain.gain.linearRampToValueAtTime(0.22, t0 + 0.8);
+    outGain.gain.setValueAtTime(0.22, t0 + dur - 0.6);
+    outGain.gain.linearRampToValueAtTime(0, t0 + dur);
+    carrier.start(t0); modulator.start(t0);
+    carrier.stop(t0 + dur + 0.1); modulator.stop(t0 + dur + 0.1);
+  }
+
+  // 불규칙하게 튀어나오는 트라이톤 스팅어 — 규칙적이지 않아서 더 불안하게 만드는 효과.
+  // modeGainNode로 직행(더킹 영향 없이 항상 또렷하게 찌르는 소리로 남긴다).
+  _playTritoneStab(t0, freq, gain) {
+    const osc1 = this.ctx.createOscillator(); osc1.type = "sawtooth"; osc1.frequency.value = freq;
+    const osc2 = this.ctx.createOscillator(); osc2.type = "sawtooth"; osc2.frequency.value = freq * 1.4142; // 트라이톤
+    const filter = this.ctx.createBiquadFilter(); filter.type = "bandpass"; filter.frequency.value = freq * 2; filter.Q.value = 3;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(gain || 0.2, t0 + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.002, t0 + 0.5);
+    osc1.connect(filter); osc2.connect(filter); filter.connect(g); g.connect(this._modeGainNode);
+    osc1.start(t0); osc2.start(t0); osc1.stop(t0 + 0.55); osc2.stop(t0 + 0.55);
+  }
+
+  // 어두운 라이저 — 링모듈 그로울의 기본음(약 55Hz) 근처의 저음에서 시작해 서서히
+  // 차오르는 "울음소리". 저음 몸통(lowGain) + 포효하는 "모음" 질감을 내는 포먼트
+  // 레이어(formantGain)를 병렬로 겹치고, 살짝 흔들리는 비브라토를 얹어서 기계적인
+  // 스윕이 아니라 진짜 살아있는 짐승이 울부짖는 느낌을 낸다. modeGainNode로 직행
+  // (더킹은 그루브 쪽에서 걸므로 이쪽은 항상 원래 크기 그대로 또렷하게 들림).
+  _playDarkRiser(t0, dur) {
+    const vibrato = this.ctx.createOscillator(); vibrato.type = "sine"; vibrato.frequency.value = 5.5;
+    const vibratoGain = this.ctx.createGain(); vibratoGain.gain.value = 5;
+    vibrato.connect(vibratoGain);
+
+    const osc = this.ctx.createOscillator(); osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(45, t0);
+    osc.frequency.exponentialRampToValueAtTime(240, t0 + dur);
+    vibratoGain.connect(osc.frequency);
+    const detune = this.ctx.createOscillator(); detune.type = "sawtooth";
+    detune.frequency.setValueAtTime(45 * 1.01, t0);
+    detune.frequency.exponentialRampToValueAtTime(240 * 1.01, t0 + dur);
+    vibratoGain.connect(detune.frequency);
+    const shaper = this.ctx.createWaveShaper(); shaper.curve = this._makeDistortionCurve(16); shaper.oversample = "2x";
+    osc.connect(shaper); detune.connect(shaper);
+
+    // 저음 몸통 (어둡고 무거운 축)
+    const lowFilter = this.ctx.createBiquadFilter(); lowFilter.type = "lowpass"; lowFilter.Q.value = 3;
+    lowFilter.frequency.setValueAtTime(120, t0);
+    lowFilter.frequency.exponentialRampToValueAtTime(800, t0 + dur);
+    const lowGain = this.ctx.createGain();
+    lowGain.gain.setValueAtTime(0, t0);
+    lowGain.gain.linearRampToValueAtTime(0.42, t0 + dur * 0.85);
+    lowGain.gain.linearRampToValueAtTime(0, t0 + dur);
+    shaper.connect(lowFilter); lowFilter.connect(lowGain); lowGain.connect(this._modeGainNode);
+
+    // 포먼트 레이어 (포효하는 "모음" 질감 — 공명 밴드가 위로 열림)
+    const formant = this.ctx.createBiquadFilter(); formant.type = "bandpass"; formant.Q.value = 7;
+    formant.frequency.setValueAtTime(280, t0);
+    formant.frequency.exponentialRampToValueAtTime(1300, t0 + dur);
+    const formantGain = this.ctx.createGain();
+    formantGain.gain.setValueAtTime(0, t0);
+    formantGain.gain.linearRampToValueAtTime(0.24, t0 + dur * 0.9);
+    formantGain.gain.linearRampToValueAtTime(0, t0 + dur);
+    shaper.connect(formant); formant.connect(formantGain); formantGain.connect(this._modeGainNode);
+
+    osc.start(t0); detune.start(t0); vibrato.start(t0);
+    osc.stop(t0 + dur + 0.05); detune.stop(t0 + dur + 0.05); vibrato.stop(t0 + dur + 0.05);
+  }
+
+  // 라이저가 차오르는 동안 그루브(패드/킥/하이햇)를 살짝 눌러서(더킹) 라이저(보스의
+  // 울음소리)가 믹스 위로 확실히 뚫고 나오게 한다. 정점(임팩트) 직후 빠르게 원래
+  // 볼륨으로 복귀시켜 그루브가 계속 이어지게 함.
+  _duckGroove(t0, buildDur) {
+    const g = this._grooveGain;
+    g.gain.cancelScheduledValues(t0);
+    g.gain.setValueAtTime(1, t0);
+    g.gain.linearRampToValueAtTime(0.4, t0 + buildDur * 0.6);
+    g.gain.setValueAtTime(0.4, t0 + buildDur);
+    g.gain.linearRampToValueAtTime(1, t0 + buildDur + 0.7);
+  }
+
+  // 라이저가 차오른 정점에서 터지는 묵직한 타격음 — 크고 낮은 킥 + 불협 스팅어를
+  // 겹쳐서 "쌓아온 압박감이 한 번에 터진다"는 느낌을 줌
+  _playHeavyImpact(t0, freq) {
+    const osc = this.ctx.createOscillator(); osc.type = "sine";
+    osc.frequency.setValueAtTime(140, t0);
+    osc.frequency.exponentialRampToValueAtTime(30, t0 + 0.4);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(0.55, t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.002, t0 + 0.9);
+    osc.connect(g); g.connect(this._modeGainNode);
+    osc.start(t0); osc.stop(t0 + 0.95);
+    this._playTritoneStab(t0, freq, 0.26);
   }
 
   // 처음 화면을 클릭하는 순간(unlock) 이 함수가 동기적으로 실행되는데,
