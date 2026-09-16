@@ -1,4 +1,8 @@
-const PLACEMENT = { pathMargin: 44, maxPathDistance: 108, towerSpacing: 46, playTop: 64, playBottom: 650 };
+// towerSpacing was 46 — 타워 하나의 실제 시각/클릭 반경(hitRadius 34, 즉 지름 68)보다
+// 작아서 타워끼리 겹쳐 보일 수 있었다. 지름보다 확실히 크게 잡아서 서로 안 겹치게 함.
+// edgeMargin은 화면 가장자리(경로가 시작/끝나는 근처)에 타워가 바짝 붙어 답답하게
+// 배치되는 것을 막기 위한 여백.
+const PLACEMENT = { pathMargin: 44, maxPathDistance: 108, towerSpacing: 72, playTop: 64, playBottom: 650, edgeMargin: 34 };
 const DECK_RADIUS = 150; // 경로를 감싸는 갑판(섬)의 폭 — 가운데는 확실히 땅, 반대쪽 모서리는 우주 (요청으로 살짝 확대)
 
 class GameScene extends Phaser.Scene {
@@ -175,7 +179,8 @@ class GameScene extends Phaser.Scene {
   }
 
   _inPlayArea(x, y) {
-    return y > PLACEMENT.playTop && y < PLACEMENT.playBottom && x > 4 && x < 1276;
+    return y > PLACEMENT.playTop && y < PLACEMENT.playBottom
+      && x > PLACEMENT.edgeMargin && x < 1280 - PLACEMENT.edgeMargin;
   }
 
   canPlace(x, y) {
@@ -297,8 +302,16 @@ class GameScene extends Phaser.Scene {
         isFinal ? "최종보스가 기지에 도달하면 즉시 패배합니다!" : "중간보스를 놓치면 생명을 크게 잃습니다!",
         PALETTE.danger, false, 3000,
       ));
+      // 확대 후 원래 화면으로 복귀 — 단, zoomTo()의 완료 콜백 "안에서" 곧바로 zoomTo()를
+      // 다시 호출하면 Phaser가 두 번째 줌을 조용히 무시해서 확대된 채로 멈추는 버그가
+      // 있었다(실측으로 확인). time.delayedCall(0, ...)로 한 틱 늦춰서 호출하면 해결됨.
+      // 최종보스는 어차피 게임이 곧 끝나는 마지막 구간이라, 굳이 복귀시키지 않고
+      // 확대된 채로 유지한다(의도적 — 버그가 아니라 연출).
       const ease = Phaser.Math.Easing.Sine.InOut;
-      this.cameras.main.zoomTo(isFinal ? 1.07 : 1.04, 200, ease, true, () => this.cameras.main.zoomTo(1, 260, ease));
+      this.cameras.main.zoomTo(isFinal ? 1.07 : 1.04, 200, ease, true, () => {
+        if (isFinal) return;
+        this.time.delayedCall(0, () => this.cameras.main.zoomTo(1, 260, ease));
+      });
     }
   }
 
