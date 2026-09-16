@@ -1,8 +1,11 @@
-// towerSpacing was 46 — 타워 하나의 실제 시각/클릭 반경(hitRadius 34, 즉 지름 68)보다
-// 작아서 타워끼리 겹쳐 보일 수 있었다. 지름보다 확실히 크게 잡아서 서로 안 겹치게 함.
+// towerSpacing: 처음엔 hitRadius(34, 클릭 판정용)의 지름인 68을 기준으로 72까지
+// 올렸었는데, 실제로 화면에 그려지는 타워 스프라이트는 108x108 전체 텍스처 크기라
+// (hitRadius는 클릭 판정 반경일 뿐 실제 그림 크기가 아니었음) 72로는 여전히 많이
+// 겹쳐 보였다. 실측으로 두 타워를 여러 간격에 놓고 비교해본 결과, 98 정도가
+// "서로 딱 붙거나 아주 살짝만 겹치는" 수준이라 이 값으로 정착.
 // edgeMargin은 화면 가장자리(경로가 시작/끝나는 근처)에 타워가 바짝 붙어 답답하게
 // 배치되는 것을 막기 위한 여백.
-const PLACEMENT = { pathMargin: 44, maxPathDistance: 108, towerSpacing: 72, playTop: 64, playBottom: 650, edgeMargin: 34 };
+const PLACEMENT = { pathMargin: 44, maxPathDistance: 108, towerSpacing: 98, playTop: 64, playBottom: 650, edgeMargin: 34 };
 const DECK_RADIUS = 150; // 경로를 감싸는 갑판(섬)의 폭 — 가운데는 확실히 땅, 반대쪽 모서리는 우주 (요청으로 살짝 확대)
 
 class GameScene extends Phaser.Scene {
