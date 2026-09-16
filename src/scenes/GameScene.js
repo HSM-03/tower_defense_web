@@ -314,16 +314,8 @@ class GameScene extends Phaser.Scene {
         isFinal ? "최종보스가 기지에 도달하면 즉시 패배합니다!" : "중간보스를 놓치면 생명을 크게 잃습니다!",
         PALETTE.danger, false, 3000,
       ));
-      // 확대 후 원래 화면으로 복귀 — 단, zoomTo()의 완료 콜백 "안에서" 곧바로 zoomTo()를
-      // 다시 호출하면 Phaser가 두 번째 줌을 조용히 무시해서 확대된 채로 멈추는 버그가
-      // 있었다(실측으로 확인). time.delayedCall(0, ...)로 한 틱 늦춰서 호출하면 해결됨.
-      // 최종보스는 어차피 게임이 곧 끝나는 마지막 구간이라, 굳이 복귀시키지 않고
-      // 확대된 채로 유지한다(의도적 — 버그가 아니라 연출).
-      const ease = Phaser.Math.Easing.Sine.InOut;
-      this.cameras.main.zoomTo(isFinal ? 1.07 : 1.04, 200, ease, true, () => {
-        if (isFinal) return;
-        this.time.delayedCall(0, () => this.cameras.main.zoomTo(1, 260, ease));
-      });
+      // 보스 웨이브 카메라 확대 연출은 제거함(요청) — 확대 후 복귀가 버그였던 적도
+      // 있었고, 아예 없는 게 낫겠다는 판단.
     }
   }
 
